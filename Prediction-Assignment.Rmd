@@ -1,0 +1,169 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Ramon De LHotellerie"
+date: "1/27/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Executive Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. 
+
+They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here:
+[http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+### Data source
+
+The data analyzed for this assigment, the Weight Lifting Exercises (WLE) Dataset, come from this source: 
+
+[Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/har) and refers to Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H.
+
+The training data for this project is available here:
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data is available here:
+
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+### Summary
+
+The assignment has two main point:
+
+1. **Data analysis**: The dataset will be loaded, described and analyzed.
+
+2. **Prediction of results** - Testing different models that help to predict future results
+
+### Data Analysis
+
+#### Libriaries & Data Loading
+
+```{r}
+## libraries load
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+```
+
+```{r}
+## data load
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", dest="pml-training.csv", mode="wb")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", dest="pml-testing.csv", mode="wb")
+```
+
+```{r}
+## Gathering Training & Test data
+dataTrain <- read.csv("pml-training.csv")
+dataTest <- read.csv("pml-testing.csv")
+head(dataTrain)
+head(dataTest)
+```
+
+A visual inspection of the first rows of the Training and Test data shows NA values, which need to be removed and at the same time than partioning the training dataset into two: 75% for training and 25% for testing.
+
+```{r}
+# Data partition
+inTrain <- createDataPartition(y=dataTrain$classe, p=0.7, list=FALSE)
+Rtraining <- dataTrain[inTrain, ]
+Rtesting <- dataTrain[-inTrain, ]
+dim(Rtesting)
+```
+
+```{r}
+# Removing w/ zero variance variables
+NZV_1 <- nearZeroVar(Rtraining, saveMetrics = TRUE)
+NZV_1
+
+Nzv_1 <- nearZeroVar(Rtraining)
+Rtraining <- Rtraining[,-Nzv_1]
+dim(Rtraining)
+Rtesting <- Rtesting[,-Nzv_1]
+dim(Rtesting)
+```
+
+```{r}
+# Remove NA variables
+RNA <- sapply(Rtraining,function(x) mean(is.na(x))) > 0.95
+Rtraining <- Rtraining[,RNA==FALSE]
+Rtesting <- Rtesting[,RNA==FALSE]
+head(Rtraining)
+head(Rtesting)
+```
+```{r}
+dim(Rtesting)
+```
+```{r}
+# removing identification (columns 1 to 5)
+Rtraining <- Rtraining[, -(1:5)]
+Rtesting  <- Rtesting[, -(1:5)]
+dim(Rtraining)
+```
+
+```{r}
+dim(Rtesting)
+```
+
+Once we have clean Training and Testing data, we can start predicting, using different prediction models to be compared to each other in their results.
+
+### Prediction of results
+
+#### Generalized Boosted Model
+
+```{r}
+set.seed(12345)
+GBModel <- trainControl(method="repeatedcv", number=5, repeats=1)
+modFitGBmodel <- train( classe ~., data=Rtraining, method="gbm", trControl= GBModel, verbose=FALSE)
+modFitGBmodel$finalModel
+```
+
+#### Random Forest Model
+
+```{r}
+set.seed(12345)
+RFModel <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRFmodel <- train(classe ~., data=Rtraining, method="rf", trControl=RFModel)
+modFitRFmodel$finalModel
+```
+
+Now that both models are in place, I inspect and compare their accuracy results
+
+```{r}
+# predicting with GB Model
+predictGBModel <- predict(modFitGBmodel, newdata=Rtesting)
+conf.matrix.GBModel <- confusionMatrix(predictGBModel, Rtesting$classe)
+conf.matrix.GBModel
+```
+
+```{r}
+prediction.testing.RFModel <- predict(modFitRFmodel, newdata=Rtesting)
+conf.matrix.RFModel <- confusionMatrix(prediction.testing.RFModel,Rtesting$classe)
+conf.matrix.RFModel
+```
+
+Out of these tables, we can conclude that the result of the Random Forest model shows a much higher accuracy (99.97%) than the GBM Model (99.44%)
+
+Then, next step is to visualize the GBModel
+
+```{r}
+plot(conf.matrix.GBModel$table, col = conf.matrix.GBModel$byClass, 
+     main = paste("GBM - Accuracy =", round(conf.matrix.GBModel$overall['Accuracy'], 4)))
+plot(conf.matrix.RFModel$table, col = conf.matrix.RFModel$byClass, 
+     main = paste("Random Forest - Accuracy =", round(conf.matrix.RFModel$overall['Accuracy'], 4)))
+```
+
+Therefore, I decide to predict based on the most accurate model 
+
+```{r}
+predicttesting <- predict(modFitRFmodel, newdata=dataTest)
+predicttesting
+```
